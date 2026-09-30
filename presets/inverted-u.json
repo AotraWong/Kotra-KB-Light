@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "柔和倒 U",
+  "hysteresis": 0.1,
+  "settle_seconds": 2.0,
+  "bands": [
+    {"lux": 0, "brightness": 13},
+    {"lux": 2, "brightness": 26},
+    {"lux": 10, "brightness": 51},
+    {"lux": 30, "brightness": 89},
+    {"lux": 80, "brightness": 64},
+    {"lux": 150, "brightness": 26},
+    {"lux": 250, "brightness": 0}
+  ]
+}
