@@ -1,0 +1,21 @@
+[Unit]
+Description=Kotra-KB-Light ambient keyboard backlight (CLI)
+After=multi-user.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/Kotra-KB-Light/kbd_auto.py
+Restart=on-failure
+RestartSec=15
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ReadWritePaths=/sys/class/leds/kbd_backlight/brightness
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
