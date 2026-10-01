@@ -118,7 +118,7 @@ python3 gui.py --hidden
 python3 gui.py --foreground
 ```
 
-后台日志在 `${XDG_STATE_HOME:-~/.local/state}/m1-kbd-auto/gui.log`。
+后台日志在 `${XDG_STATE_HOME:-~/.local/state}/Kotra-KB-Light/gui.log`。
 启动提示表示后台进程已创建，若窗口/托盘未出现，请查看日志。
 重复启动受单实例锁限制，使用现有托盘打开设置。首次启动不接管灯光，需自行选择自动调节或常亮。
 
@@ -131,3 +131,17 @@ python3 gui.py --foreground
 若此前安装过旧版 `m1-kbd-auto.service`，先执行 `sudo systemctl disable --now m1-kbd-auto.service`，再按上面的安装步骤复制新版文件并加载新服务。若没有安装过旧服务，无需执行此步骤。
 
 桌面启动器已改为新的源码目录；此前复制到应用菜单或自启动目录的 `.desktop` 文件，也需要替换为新版。GUI 的日志目录及单实例锁保留旧内部标识以兼容已有实例，这不影响程序显示名称或启动路径。
+
+## 中文 / English 与关于页面
+
+窗口右上角的「English / 中文」按钮可立即切换界面语言，包括曲线坐标、档位配置、运行状态和托盘菜单，不影响当前调光模式或未保存的编辑。语言选择目前仅对本次运行有效。
+
+「关于 / About」可从窗口及托盘打开，注明作者 AotraWong 和 GitHub 仓库网址。页面本身离线可读，外部链接仅在点击时打开。
+
+Use the **English / 中文** button to switch languages without restarting or interrupting brightness control. Open **About** from the window or system tray for author AotraWong and the GitHub repository URL. No logs are uploaded automatically. Language selection applies to the current session.
+
+终端启动回显、命令行调光日志及按键助手错误提示采用中英双语；原始系统错误保持原样。助手的 READY/KEY 是内部通信标记，不作翻译。
+
+主界面仅保留曲线图与运行控制。点击「曲线配置 / Curve configuration」打开二级大面板，集中载入预设、打开/保存配置、编辑/添加/删除档位、换档配置和曲线查询；关闭面板不丢弃当前编辑。
+
+日志目录已随应用更名为 `Kotra-KB-Light`；旧 `m1-kbd-auto/gui.log` 保留原位，不自动移动或删除。下次启动后写入新目录。

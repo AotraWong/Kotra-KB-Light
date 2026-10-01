@@ -44,6 +44,9 @@ class TrayTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp, patch.dict(gui.os.environ, {'XDG_STATE_HOME': tmp}), patch('gui.subprocess.Popen') as popen:
             self.assertEqual(gui.launch_background(['--hidden']), 0)
+            from pathlib import Path
+            self.assertTrue((Path(tmp) / 'Kotra-KB-Light' / 'gui.log').is_file())
+            self.assertFalse((Path(tmp) / 'm1-kbd-auto').exists())
             args, kwargs = popen.call_args
             self.assertIn('--foreground', args[0])
             self.assertIn('--hidden', args[0])

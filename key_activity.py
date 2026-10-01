@@ -57,5 +57,11 @@ if __name__ == '__main__':
     try:
         main()
     except (OSError, ValueError, RuntimeError) as exc:
-        print(str(exc), file=sys.stderr)
+        detail = str(exc)
+        translations = {'未找到唯一的 Apple SPI Keyboard': 'Could not find exactly one Apple SPI Keyboard',
+                        '键盘已断开': 'Keyboard disconnected'}
+        english = translations.get(detail)
+        if english:
+            detail += ' / ' + english
+        print('按键检测失败 / Keyboard detection failed: ' + detail, file=sys.stderr)
         raise SystemExit(1)

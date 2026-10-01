@@ -11,11 +11,14 @@ from PySide6.QtGui import QColor, QPainter, QPen, QPainterPath, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QLabel, QPushButton, QCheckBox, QTableWidget, QTableWidgetItem,
     QDoubleSpinBox, QSpinBox, QSlider, QFileDialog, QMessageBox, QHeaderView,
-    QGroupBox, QSplitter, QSystemTrayIcon, QMenu, QButtonGroup, QWidgetAction, QFormLayout)
+    QGroupBox, QSplitter, QSystemTrayIcon, QMenu, QButtonGroup, QWidgetAction, QFormLayout, QDialog)
 from PySide6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage
 from curve import load, save, validate, value_at, PRESET
 from kbd_auto import Controller, sensor_path, number
 from activity import ActivityEnvelope
+import i18n
+from i18n import tr, QLabel, QPushButton, QGroupBox
+from support import SupportDialog
 
 
 class Hardware:
@@ -66,8 +69,8 @@ class CurvePlot(QWidget):
         def y(brightness):
             return top + h * (1 - brightness / 255)
         p.setPen(color)
-        p.drawText(left, 16, '键盘亮度 / 255')
-        p.drawText(left, self.height() - 7, '环境光 lux（对数刻度；阶梯配置）')
+        p.drawText(left, 16, tr('键盘亮度 / 255'))
+        p.drawText(left, self.height() - 7, tr('环境光 lux（对数刻度；阶梯配置）'))
         for value in (0, 64, 128, 192, 255):
             p.setPen(QPen(self.palette().mid().color(), 1))
             p.drawLine(QPointF(left, y(value)), QPointF(left + w, y(value)))
@@ -102,6 +105,7 @@ class Window(QMainWindow):
         self.tray = None
         self.exiting = False
         self.active_mode = None
+        self.support_dialog = None
         self.hardware = hardware
         self.data = load()
         self.dirty = False
@@ -122,9 +126,25 @@ class Window(QMainWindow):
         layout = QVBoxLayout(main)
         title = QLabel('Kotra-KB-Light')
         title.setStyleSheet('font-size: 23px; font-weight: 600;')
-        layout.addWidget(title)
+        header = QHBoxLayout()
+        header.addWidget(title, 1)
+        self.language_button = QPushButton('English')
+        self.language_button.clicked.connect(self.toggle_language)
+        header.addWidget(self.language_button)
+        self.support_button = QPushButton('关于')
+        self.support_button.clicked.connect(self.show_support)
+        header.addWidget(self.support_button)
+        layout.addLayout(header)
         self.readings = QLabel('正在读取环境光…')
         layout.addWidget(self.readings)
+        self.config_button = QPushButton('曲线配置')
+        self.config_button.clicked.connect(self.show_curve_config)
+        header.addWidget(self.config_button)
+        self.plot = CurvePlot()
+        layout.addWidget(self.plot, 1)
+        self.config_panel = QDialog(self)
+        self.config_panel.resize(760, 530)
+        config_layout = QVBoxLayout(self.config_panel)
         row = QHBoxLayout()
         for label, callback in [('载入倒 U 预设', self.preset), ('打开配置…', self.open_config), ('保存配置…', self.save_config)]:
             button = QPushButton(label)
@@ -132,17 +152,13 @@ class Window(QMainWindow):
             row.addWidget(button)
         self.filename = QLabel('倒 U 预设')
         row.addWidget(self.filename, 1)
-        layout.addLayout(row)
-        split = QSplitter()
+        config_layout.addLayout(row)
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(['起始环境光（lux）', '键盘亮度（0–255）'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setMinimumWidth(330)
         self.table.itemChanged.connect(self.edited)
-        split.addWidget(self.table)
-        self.plot = CurvePlot()
-        split.addWidget(self.plot)
-        layout.addWidget(split, 1)
+        config_layout.addWidget(self.table, 1)
         row = QHBoxLayout()
         for label, callback in [('添加档位', self.add_band), ('删除所选档位', self.remove_band)]:
             button = QPushButton(label)
@@ -157,11 +173,11 @@ class Window(QMainWindow):
         self.hysteresis.setRange(0, 50)
         self.hysteresis.setSuffix('%')
         self.hysteresis.setToolTip('环境光需超出档位边界的比例，用于避免反复切换。')
-        settings_layout.addRow('切换幅度', self.hysteresis)
+        settings_layout.addRow(QLabel('切换幅度'), self.hysteresis)
         self.settle = QDoubleSpinBox()
         self.settle.setRange(0, 60)
         self.settle.setSuffix(' 秒')
-        settings_layout.addRow('持续时间', self.settle)
+        settings_layout.addRow(QLabel('持续时间'), self.settle)
         settings_action = QWidgetAction(self.shift_menu)
         settings_action.setDefaultWidget(settings)
         self.shift_menu.addAction(settings_action)
@@ -169,7 +185,7 @@ class Window(QMainWindow):
         row.addWidget(self.shift_button)
         self.hysteresis.valueChanged.connect(self.edited)
         self.settle.valueChanged.connect(self.edited)
-        layout.addLayout(row)
+        config_layout.addLayout(row)
         preview_row = QHBoxLayout()
         preview_row.addWidget(QLabel('曲线查询'))
         self.query = QDoubleSpinBox()
@@ -180,7 +196,10 @@ class Window(QMainWindow):
         preview_row.addWidget(self.query)
         self.query_result = QLabel()
         preview_row.addWidget(self.query_result, 1)
-        layout.addLayout(preview_row)
+        config_layout.addLayout(preview_row)
+        close_config = QPushButton('关闭')
+        close_config.clicked.connect(self.config_panel.hide)
+        config_layout.addWidget(close_config, 0, Qt.AlignmentFlag.AlignRight)
         group = QGroupBox('运行控制')
         controls = QVBoxLayout(group)
         row = QHBoxLayout()
@@ -222,7 +241,45 @@ class Window(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(50)
+        self.retranslate_ui()
         self.tick()
+
+    def show_curve_config(self):
+        self.config_panel.show()
+        self.config_panel.raise_()
+        self.config_panel.activateWindow()
+
+    def toggle_language(self):
+        i18n.language = 'en' if i18n.language == 'zh' else 'zh'
+        self.retranslate_ui()
+
+    def retranslate_ui(self):
+        self.config_panel.setWindowTitle(tr('曲线配置') + ' · Kotra-KB-Light')
+        for widget in self.findChildren(QWidget):
+            if isinstance(widget, (QLabel, QPushButton, QGroupBox)):
+                widget.retranslate()
+        self.language_button.setText('中文' if i18n.language == 'en' else 'English')
+        self.table.setHorizontalHeaderLabels([tr('起始环境光（lux）'), tr('键盘亮度（0–255）')])
+        self.hysteresis.setToolTip(tr('环境光需超出档位边界的比例，用于避免反复切换。'))
+        self.settle.blockSignals(True)
+        self.settle.setSuffix(tr(' 秒'))
+        self.settle.blockSignals(False)
+        self.plot.update()
+        if self.tray:
+            self.tray.setToolTip(tr('Kotra-KB-Light · 后台运行'))
+            for action in self.tray.contextMenu().actions():
+                if action.data():
+                    action.setText(tr(action.data()))
+        if self.support_dialog:
+            self.support_dialog.retranslate()
+
+    def show_support(self):
+        if self.support_dialog is None:
+            self.support_dialog = SupportDialog(self)
+        self.support_dialog.retranslate()
+        self.support_dialog.show()
+        self.support_dialog.raise_()
+        self.support_dialog.activateWindow()
 
     def fill(self, data):
         self.loading = True
@@ -266,7 +323,7 @@ class Window(QMainWindow):
         self.query_result.setText(f'→ {value}/255（{value/255:.0%}），未计入换档配置和延迟')
 
     def discard(self):
-        return not self.dirty or QMessageBox.question(self, '未保存的修改', '放弃未保存的曲线修改？') == QMessageBox.StandardButton.Yes
+        return not self.dirty or QMessageBox.question(self, tr('未保存的修改'), tr('放弃未保存的曲线修改？')) == QMessageBox.StandardButton.Yes
 
     def preset(self):
         if self.discard():
@@ -280,7 +337,7 @@ class Window(QMainWindow):
     def open_config(self):
         if not self.discard():
             return
-        path, _ = QFileDialog.getOpenFileName(self, '打开曲线', str(PRESET.parent), 'JSON (*.json)')
+        path, _ = QFileDialog.getOpenFileName(self, tr('打开曲线'), str(PRESET.parent), 'JSON (*.json)')
         if path:
             try:
                 data = load(path)
@@ -290,13 +347,13 @@ class Window(QMainWindow):
                 self.filename.setText(Path(path).name)
                 self.dirty = False
             except (OSError, ValueError, KeyError, TypeError) as exc:
-                QMessageBox.warning(self, '打开失败', str(exc))
+                QMessageBox.warning(self, tr('打开失败'), tr(str(exc)))
 
     def save_config(self):
         if not self.mode_auto.isEnabled():
-            QMessageBox.warning(self, '无法保存', '请先修正无效档位。')
+            QMessageBox.warning(self, tr('无法保存'), tr('请先修正无效档位。'))
             return
-        path, _ = QFileDialog.getSaveFileName(self, '保存曲线', str(Path(__file__).parent/'custom.json'), 'JSON (*.json)')
+        path, _ = QFileDialog.getSaveFileName(self, tr('保存曲线'), str(Path(__file__).parent/'custom.json'), 'JSON (*.json)')
         if path:
             try:
                 if Path(path).resolve() == PRESET.resolve():
@@ -306,7 +363,7 @@ class Window(QMainWindow):
                 self.dirty = False
                 self.status.setText('配置已保存')
             except (OSError, ValueError) as exc:
-                QMessageBox.warning(self, '保存失败', str(exc))
+                QMessageBox.warning(self, tr('保存失败'), tr(str(exc)))
 
     def add_band(self):
         if not self.mode_auto.isEnabled():
@@ -410,7 +467,7 @@ class Window(QMainWindow):
             self.write(round(value * self.hardware.maximum / 255))
             self.status.setText(f'已应用手动亮度：{value}/255')
         except Exception as exc:
-            self.status.setText(str(exc))
+            self.status.setText(tr(str(exc)))
 
     def tick(self):
         try:
@@ -450,13 +507,18 @@ class Window(QMainWindow):
         icon = QIcon(str(Path(__file__).with_name('keyboard.svg')))
         self.setWindowIcon(icon)
         self.tray = QSystemTrayIcon(icon, self)
-        self.tray.setToolTip('Kotra-KB-Light · 后台运行')
+        self.tray.setToolTip(tr('Kotra-KB-Light · 后台运行'))
         menu = QMenu(self)
         menu.addAction('打开设置', self.show_settings)
         menu.addAction('自动调节', lambda: self.select_mode('auto'))
         menu.addAction('常亮', lambda: self.select_mode('always'))
+        menu.addAction('关于', self.show_support)
         menu.addSeparator()
         menu.addAction('退出并恢复亮度', self.request_exit)
+        for action in menu.actions():
+            if not action.isSeparator():
+                action.setData(action.text())
+                action.setText(tr(action.text()))
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self.tray_activated)
         self.tray.show()
@@ -481,6 +543,9 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         if not self.exiting and self.tray is not None and self.tray.isVisible() and QSystemTrayIcon.isSystemTrayAvailable():
+            self.config_panel.hide()
+            if self.support_dialog:
+                self.support_dialog.hide()
             self.hide()
             event.ignore()
             return
@@ -488,7 +553,7 @@ class Window(QMainWindow):
             event.ignore()
             return
         if not self.restore():
-            QMessageBox.warning(self, '未能恢复灯光', self.status.text())
+            QMessageBox.warning(self, tr('未能恢复灯光'), self.status.text())
         self.timer.stop()
         self.keys.terminate()
         if not self.keys.waitForFinished(1000):
@@ -502,14 +567,18 @@ class Window(QMainWindow):
 
 
 def launch_background(arguments):
-    state = Path(os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state'))) / 'm1-kbd-auto'
+    state_root = Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state')
+    if not state_root.is_absolute():
+        state_root = Path.home() / '.local/state'
+    state = state_root / 'Kotra-KB-Light'
     state.mkdir(parents=True, exist_ok=True)
     log = state / 'gui.log'
     with log.open('a') as output:
         subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--foreground', *arguments],
                          stdin=subprocess.DEVNULL, stdout=output, stderr=output,
                          start_new_session=True, close_fds=True)
-    print(f'Kotra-KB-Light 已在后台启动；日志：{log}')
+    print('Kotra-KB-Light 后台进程已启动 / Background process started')
+    print(f'日志 / Log: {log}')
     return 0
 
 
@@ -524,7 +593,7 @@ def main():
     app.setWindowIcon(QIcon(str(Path(__file__).with_name('keyboard.svg'))))
     lock = QLockFile(str(Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation)) / f'm1-kbd-auto-{os.getuid()}.lock'))
     if not lock.tryLock(100):
-        QMessageBox.warning(None, '已经运行', '键盘灯已在运行，请从系统托盘打开设置。')
+        QMessageBox.warning(None, tr('已经运行'), tr('键盘灯已在运行，请从系统托盘打开设置。'))
         return 1
     window = Window()
     tray_available = window.setup_tray()

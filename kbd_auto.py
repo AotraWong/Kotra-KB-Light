@@ -13,7 +13,7 @@ from curve import load, StepPolicy
 def number(path):
     value = float(Path(path).read_text().strip())
     if not math.isfinite(value) or value < 0:
-        raise ValueError(f'Invalid nonnegative reading: {path}')
+        raise ValueError(f'无效的非负读数 / Invalid nonnegative reading: {path}')
     return value
 
 
@@ -39,7 +39,7 @@ class Controller:
 
     def update(self, lux, current, now, dt):
         if not math.isfinite(lux) or lux < 0:
-            raise ValueError('Invalid lux')
+            raise ValueError('环境光读数无效 / Invalid lux')
         if current != self.expected:
             self.until = now + self.hold
             self.expected = current
@@ -55,16 +55,16 @@ class Controller:
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=Path, help='JSON curve configuration')
-    parser.add_argument('--sensor', type=Path, help='Processed illuminance input, in lux (not raw)')
+    parser = argparse.ArgumentParser(description='Kotra-KB-Light 环境光键盘背光控制 / Ambient keyboard backlight control')
+    parser.add_argument('--config', type=Path, help='JSON 曲线配置 / JSON curve configuration')
+    parser.add_argument('--sensor', type=Path, help='环境光输入（lux，非原始值） / Processed illuminance input in lux (not raw)')
     parser.add_argument('--led', type=Path, default=Path('/sys/class/leds/kbd_backlight'))
-    parser.add_argument('--dry-run', action='store_true', help='Read hardware and simulate changes only')
-    parser.add_argument('--samples', type=int, default=0, help='Stop after N samples; 0 runs continuously')
-    parser.add_argument('--manual-hold', type=float, default=60, help='Seconds to respect external brightness changes')
+    parser.add_argument('--dry-run', action='store_true', help='仅读取并模拟，不改变灯光 / Read hardware and simulate changes only')
+    parser.add_argument('--samples', type=int, default=0, help='采样 N 次后停止，0 表示持续运行 / Stop after N samples; 0 runs continuously')
+    parser.add_argument('--manual-hold', type=float, default=60, help='外部手动调光后的暂停秒数 / Seconds to respect external brightness changes')
     args = parser.parse_args()
     if args.samples < 0 or not math.isfinite(args.manual_hold) or args.manual_hold < 0:
-        parser.error('samples and manual-hold must be nonnegative and finite')
+        parser.error('samples 和 manual-hold 必须是有限非负数 / samples and manual-hold must be nonnegative and finite')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -73,15 +73,15 @@ def main():
         sensor = args.sensor or sensor_path()
         maximum = int(number(args.led / 'max_brightness'))
         if maximum <= 0:
-            raise ValueError('Invalid max_brightness')
+            raise ValueError('最大亮度无效 / Invalid max_brightness')
         brightness = args.led / 'brightness'
         initial = int(number(brightness))
         if initial > maximum:
-            raise ValueError('Brightness exceeds maximum')
+            raise ValueError('亮度超过最大值 / Brightness exceeds maximum')
         control = Controller(maximum, initial, args.manual_hold, load(args.config) if args.config else load())
         simulated = initial
         last_write = None
-        logging.info('sensor=%s led=%s max=%s dry_run=%s', sensor, args.led, maximum, args.dry_run)
+        logging.info('启动 / Starting: 传感器 sensor=%s 键盘灯 led=%s 最大值 max=%s 只读模拟 dry_run=%s', sensor, args.led, maximum, args.dry_run)
         previous = time.monotonic() - 1
         count = 0
         errors = 0
@@ -94,22 +94,22 @@ def main():
                     lux = number(sensor)
                     current = simulated if args.dry_run else int(number(brightness))
                     if not 0 <= current <= maximum:
-                        raise ValueError('Brightness out of range')
+                        raise ValueError('亮度超出范围 / Brightness out of range')
                     next_value = control.update(lux, current, now, dt)
                     if args.dry_run:
                         simulated = next_value
-                        logging.info('lux=%.2f filtered=%.2f simulated=%d/%d', lux, control.filtered, next_value, maximum)
+                        logging.info('模拟 / Simulation: 环境光 lux=%.2f 平滑值 filtered=%.2f 模拟亮度 simulated=%d/%d', lux, control.filtered, next_value, maximum)
                     elif next_value != current:
                         brightness.write_text(f'{next_value}\n')
                         last_write = next_value
-                        logging.info('lux=%.2f brightness=%d/%d', lux, next_value, maximum)
+                        logging.info('调光 / Adjustment: 环境光 lux=%.2f 亮度 brightness=%d/%d', lux, next_value, maximum)
                     control.expected = next_value
                     errors = 0
                 except (OSError, ValueError) as exc:
                     errors += 1
-                    logging.warning('No adjustment: %s', exc)
+                    logging.warning('未调节 / No adjustment: %s', exc)
                     if errors >= 5:
-                        raise RuntimeError('Five consecutive read/write failures; stopping') from exc
+                        raise RuntimeError('连续五次读写失败，停止运行 / Five consecutive read/write failures; stopping') from exc
                 count += 1
                 if args.samples and count >= args.samples:
                     break
@@ -120,11 +120,13 @@ def main():
                 try:
                     if int(number(brightness)) == last_write:
                         brightness.write_text(f'{initial}\n')
+                        logging.info('已恢复亮度 / Brightness restored: %d/%d', initial, maximum)
                 except (OSError, ValueError) as exc:
-                    logging.warning('Could not restore initial brightness: %s', exc)
+                    logging.warning('无法恢复初始亮度 / Could not restore initial brightness: %s', exc)
     except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
-        logging.error('%s', exc)
+        logging.error('运行失败 / Execution failed: %s', exc)
         return 1
+    logging.info('运行结束 / Finished')
     return 0
 
 
