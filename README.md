@@ -145,3 +145,5 @@ Use the **English / 中文** button to switch languages without restarting or in
 主界面仅保留曲线图与运行控制。点击「曲线配置 / Curve configuration」打开二级大面板，集中载入预设、打开/保存配置、编辑/添加/删除档位、换档配置和曲线查询；关闭面板不丢弃当前编辑。
 
 日志目录已随应用更名为 `Kotra-KB-Light`；旧 `m1-kbd-auto/gui.log` 保留原位，不自动移动或删除。下次启动后写入新目录。
+
+关于页列明项目许可证 GNU GPL v3，以及 PySide6 / Qt 6、Python 标准库、UPower / D-Bus 和 polkit（pkexec）；第三方组件各自的许可证不受项目许可声明影响。
